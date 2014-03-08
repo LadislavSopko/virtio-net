@@ -1976,14 +1976,14 @@ vtnet_start_locked(struct ifnet *ifp, struct ifaltq_subque *ifsq)
 			break;
 		}
 
-		IF_DEQUEUE(ifsq, m0);
+		m0 = ifq_dequeue(&ifp->if_snd);
 		if (m0 == NULL)
 			break;
 
 		if (vtnet_encap(sc, &m0) != 0) {
 			if (m0 == NULL)
 				break;
-			IF_PREPEND(ifsq, m0);
+			ifq_prepend(&ifp->if_snd, m0);
 			ifq_set_oactive(&ifp->if_snd);
 			break;
 		}
