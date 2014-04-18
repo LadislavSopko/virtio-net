@@ -362,7 +362,7 @@ static void	vtnet_disable_tx_intr(struct vtnet_softc *);
 /* Tunables. */
 static int vtnet_csum_disable = 0;
 TUNABLE_INT("hw.vtnet.csum_disable", &vtnet_csum_disable);
-static int vtnet_tso_disable = 0;
+static int vtnet_tso_disable = 1;
 TUNABLE_INT("hw.vtnet.tso_disable", &vtnet_tso_disable);
 static int vtnet_lro_disable = 0;
 TUNABLE_INT("hw.vtnet.lro_disable", &vtnet_lro_disable);
@@ -375,7 +375,9 @@ TUNABLE_INT("hw.vtnet.lro_disable", &vtnet_lro_disable);
  * is the m_free'ing of transmitted mbufs may be delayed until
  * the watchdog fires.
  */
+#if 0
 #define VTNET_TX_INTR_MODERATION
+#endif
 
 static struct virtio_feature_desc vtnet_feature_desc[] = {
 	{ VIRTIO_NET_F_CSUM,		"TxChecksum"	},
@@ -1135,7 +1137,7 @@ vtnet_free_tx_mbufs(struct vtnet_softc *sc)
 
 	while ((txhdr = virtqueue_drain(vq, &last)) != NULL) {
 		m_freem(txhdr->vth_mbuf);
-		kfree(txhdr, M_VTNET);
+		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
 	}
 
 	KASSERT(virtqueue_empty(vq), ("mbufs remaining in Tx Vq"));
@@ -1683,7 +1685,7 @@ vtnet_txeof(struct vtnet_softc *sc)
 		deq++;
 		ifp->if_opackets++;
 		m_freem(txhdr->vth_mbuf);
-		kfree(txhdr, M_VTNET);
+		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
 	}
 
 	if (deq > 0) {
@@ -1896,8 +1898,9 @@ vtnet_encap(struct vtnet_softc *sc, struct mbuf **m_head)
 	struct mbuf *m;
 	int error;
 
-	txhdr = kmalloc(sizeof(struct vtnet_tx_header), M_VTNET,
-			M_NOWAIT);
+	/* XXX Should be allocated at attach time */
+	txhdr = contigmalloc(sizeof(struct vtnet_tx_header), M_VTNET, M_WAITOK | M_ZERO,
+	    0, BUS_SPACE_MAXADDR, 1, PAGE_SIZE);
 	if (txhdr == NULL)
 		return (ENOMEM);
 
@@ -2350,12 +2353,7 @@ vtnet_rx_filter_mac(struct vtnet_softc *sc)
 	 * around for an infrequent occurrence.
 	 */
 	filter = kmalloc(sizeof(struct vtnet_mac_filter), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (filter == NULL) {
-		device_printf(sc->vtnet_dev,
-		    "cannot allocate MAC address filtering table\n");
-		return;
-	}
+	    M_INTWAIT | M_ZERO);
 
 	/* Unicast MAC addresses: */
 	//if_addr_rlock(ifp);
