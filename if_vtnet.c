@@ -375,9 +375,7 @@ TUNABLE_INT("hw.vtnet.lro_disable", &vtnet_lro_disable);
  * is the m_free'ing of transmitted mbufs may be delayed until
  * the watchdog fires.
  */
-#if 0
 #define VTNET_TX_INTR_MODERATION
-#endif
 
 static struct virtio_feature_desc vtnet_feature_desc[] = {
 	{ VIRTIO_NET_F_CSUM,		"TxChecksum"	},
@@ -1932,7 +1930,7 @@ vtnet_encap(struct vtnet_softc *sc, struct mbuf **m_head)
 	error = vtnet_enqueue_txbuf(sc, m_head, txhdr);
 fail:
 	if (error)
-		kfree(txhdr, M_VTNET);
+		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
 
 	return (error);
 }
