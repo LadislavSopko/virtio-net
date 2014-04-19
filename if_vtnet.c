@@ -110,6 +110,9 @@ struct vtnet_softc {
 	struct virtqueue	*vtnet_tx_vq;
 	struct virtqueue	*vtnet_ctrl_vq;
 
+	struct vtnet_tx_header	*txhdrarea;
+	uint32_t		txhdridx;
+
 	int			vtnet_hdr_size;
 	int			vtnet_tx_size;
 	int			vtnet_rx_size;
@@ -364,7 +367,7 @@ static int vtnet_csum_disable = 0;
 TUNABLE_INT("hw.vtnet.csum_disable", &vtnet_csum_disable);
 static int vtnet_tso_disable = 1;
 TUNABLE_INT("hw.vtnet.tso_disable", &vtnet_tso_disable);
-static int vtnet_lro_disable = 0;
+static int vtnet_lro_disable = 1;
 TUNABLE_INT("hw.vtnet.lro_disable", &vtnet_lro_disable);
 
 /*
@@ -530,6 +533,13 @@ vtnet_attach(device_t dev)
 
 	tx_size = virtqueue_size(sc->vtnet_tx_vq);
 	sc->vtnet_tx_size = tx_size;
+	sc->txhdridx = 0;
+	sc->txhdrarea = contigmalloc(
+	    sc->vtnet_tx_size * sizeof(struct vtnet_tx_header), M_VTNET,
+	    M_WAITOK, 0, BUS_SPACE_MAXADDR, 4, 0);
+	if (sc->txhdrarea == NULL) {
+		panic("cannot contigmalloc the tx headers\n");
+	}
 	ifq_set_maxlen(&ifp->if_snd, tx_size - 1);
 	ifq_set_ready(&ifp->if_snd);
 
@@ -663,6 +673,9 @@ vtnet_detach(device_t dev)
 		vtnet_free_tx_mbufs(sc);
 	if (sc->vtnet_ctrl_vq != NULL)
 		vtnet_free_ctrl_vq(sc);
+
+	contigfree(sc->txhdrarea,
+	    sc->vtnet_tx_size * sizeof(struct vtnet_tx_header), M_VTNET);
 
 	ifmedia_removeall(&sc->vtnet_media);
 
@@ -1135,7 +1148,6 @@ vtnet_free_tx_mbufs(struct vtnet_softc *sc)
 
 	while ((txhdr = virtqueue_drain(vq, &last)) != NULL) {
 		m_freem(txhdr->vth_mbuf);
-		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
 	}
 
 	KASSERT(virtqueue_empty(vq), ("mbufs remaining in Tx Vq"));
@@ -1683,7 +1695,6 @@ vtnet_txeof(struct vtnet_softc *sc)
 		deq++;
 		ifp->if_opackets++;
 		m_freem(txhdr->vth_mbuf);
-		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
 	}
 
 	if (deq > 0) {
@@ -1896,11 +1907,9 @@ vtnet_encap(struct vtnet_softc *sc, struct mbuf **m_head)
 	struct mbuf *m;
 	int error;
 
-	/* XXX Should be allocated at attach time */
-	txhdr = contigmalloc(sizeof(struct vtnet_tx_header), M_VTNET, M_WAITOK | M_ZERO,
-	    0, BUS_SPACE_MAXADDR, 1, PAGE_SIZE);
-	if (txhdr == NULL)
-		return (ENOMEM);
+	txhdr = &sc->txhdrarea[sc->txhdridx];
+	sc->txhdridx = (sc->txhdridx + 1) % sc->vtnet_tx_size;
+	memset(txhdr, 0, sizeof(struct vtnet_tx_header));
 
 	/*
 	 * Always use the non-mergeable header to simplify things. When
@@ -1929,9 +1938,6 @@ vtnet_encap(struct vtnet_softc *sc, struct mbuf **m_head)
 
 	error = vtnet_enqueue_txbuf(sc, m_head, txhdr);
 fail:
-	if (error)
-		contigfree(txhdr, sizeof(struct vtnet_tx_header), M_VTNET);
-
 	return (error);
 }
 
