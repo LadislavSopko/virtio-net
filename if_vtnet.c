@@ -294,7 +294,9 @@ static void	vtnet_get_hwaddr(struct vtnet_softc *);
 static void	vtnet_set_hwaddr(struct vtnet_softc *);
 static int	vtnet_is_link_up(struct vtnet_softc *);
 static void	vtnet_update_link_status(struct vtnet_softc *);
+#if 0
 static void	vtnet_watchdog(struct vtnet_softc *);
+#endif
 static void	vtnet_config_change_task(void *, int);
 static int	vtnet_change_mtu(struct vtnet_softc *, int);
 static int	vtnet_ioctl(struct ifnet *, u_long, caddr_t, struct ucred *);
@@ -891,6 +893,7 @@ vtnet_update_link_status(struct vtnet_softc *sc)
 	}
 }
 
+#if 0
 static void
 vtnet_watchdog(struct vtnet_softc *sc)
 {
@@ -913,6 +916,7 @@ vtnet_watchdog(struct vtnet_softc *sc)
 	ifp->if_flags &= ~IFF_RUNNING;
 	vtnet_init_locked(sc);
 }
+#endif
 
 static void
 vtnet_config_change_task(void *arg, int pending)
@@ -1796,7 +1800,7 @@ vtnet_tx_offload(struct vtnet_softc *sc, struct mbuf *m,
 		tcp = (struct tcphdr *)(mtod(m, uint8_t *) + csum_start);
 		hdr->gso_type = gso_type;
 		hdr->hdr_len = csum_start + (tcp->th_off << 2);
-		//hdr->gso_size = m->m_pkthdr.tso_segsz;
+		hdr->gso_size = m->m_pkthdr.tso_segsz;
 
 		if (tcp->th_flags & TH_CWR) {
 			/*
@@ -1811,7 +1815,7 @@ vtnet_tx_offload(struct vtnet_softc *sc, struct mbuf *m,
 				return (NULL);
 			}
 
-			hdr->flags |= VIRTIO_NET_HDR_GSO_ECN;
+			hdr->gso_type |= VIRTIO_NET_HDR_GSO_ECN;
 		}
 
 		sc->vtnet_stats.tx_tso_offloaded++;
