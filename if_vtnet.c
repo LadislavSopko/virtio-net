@@ -537,8 +537,8 @@ vtnet_attach(device_t dev)
 	sc->vtnet_tx_size = tx_size;
 	sc->txhdridx = 0;
 	sc->txhdrarea = contigmalloc(
-	    sc->vtnet_tx_size * sizeof(struct vtnet_tx_header), M_VTNET,
-	    M_WAITOK, 0, BUS_SPACE_MAXADDR, 4, 0);
+	    ((sc->vtnet_tx_size + 1) / 2) * sizeof(struct vtnet_tx_header),
+	    M_VTNET, M_WAITOK, 0, BUS_SPACE_MAXADDR, 4, 0);
 	if (sc->txhdrarea == NULL) {
 		panic("cannot contigmalloc the tx headers\n");
 	}
@@ -677,7 +677,8 @@ vtnet_detach(device_t dev)
 		vtnet_free_ctrl_vq(sc);
 
 	contigfree(sc->txhdrarea,
-	    sc->vtnet_tx_size * sizeof(struct vtnet_tx_header), M_VTNET);
+	    ((sc->vtnet_tx_size + 1) / 2) * sizeof(struct vtnet_tx_header),
+	    M_VTNET);
 
 	ifmedia_removeall(&sc->vtnet_media);
 
@@ -1912,7 +1913,7 @@ vtnet_encap(struct vtnet_softc *sc, struct mbuf **m_head)
 	int error;
 
 	txhdr = &sc->txhdrarea[sc->txhdridx];
-	sc->txhdridx = (sc->txhdridx + 1) % sc->vtnet_tx_size;
+	sc->txhdridx = (sc->txhdridx + 1) % ((sc->vtnet_tx_size + 1) / 2);
 	memset(txhdr, 0, sizeof(struct vtnet_tx_header));
 
 	/*
